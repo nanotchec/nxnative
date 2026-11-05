@@ -10288,6 +10288,40 @@ static const ixc_ent *ixc_find(const p_draw *dw, const p_draw_idx *di) {
     for (int i = 0; i < g_ixc_n; i++) if (g_ixc[i].ind == ind && g_ixc[i].ibuf == ib && g_ixc[i].prim == prim && g_ixc[i].itype == it) return &g_ixc[i];
     return NULL;
 }
+// A mesh draw can write a storage buffer that has nothing to do with the next indirect record.
+// Keep only converted mesh records whose eight source bytes cannot overlap those writes.
+static void ixc_mesh_written(NvProg *pr) {
+    uint64_t before = g_wr_epoch++;
+    if (g_ixc_epoch != before || g_ixc_sub != g_sub_serial || !g_ixc_n) return;
+    for (int st = 0; st < 5; st++) {
+        NvShader *sh = pr->sh[st];
+        if (!sh) continue;
+        for (int i = 0; i < sh->rf.nb; i++) {
+            const nvn_rbind *b = &sh->rf.b[i];
+            if (!b->rw) continue;
+            if (b->kind != NVN_RB_SBUFP || b->reg >= 16) return;
+            const p_bind_buf *u = &S.ssbo[st][b->reg];
+            if (!u->addr || !u->size || u->size > UINT64_MAX - u->addr ||
+                nvn_sparse_alias(u->addr, u->addr + u->size)) return;
+            for (int j = 0; j < g_ixc_n; j++) {
+                ixc_ent *e = &g_ixc[j];
+                if (e->ind && e->prim == DM_PRIM_MESH_TASKS &&
+                    e->ind <= UINT64_MAX - 8 && e->ind < u->addr + u->size && u->addr < e->ind + 8)
+                    e->ind = 0;
+            }
+        }
+    }
+    int kept = 0;
+    for (int j = 0; j < g_ixc_n; j++) {
+        const ixc_ent *e = &g_ixc[j];
+        if (e->prim == DM_PRIM_MESH_TASKS && e->ind && e->ind <= UINT64_MAX - 8 &&
+            !nvn_sparse_alias(e->ind, e->ind + 8))
+            g_ixc[kept++] = *e;
+    }
+    if (kept) PD("M %llu kept %d disjoint indirect mesh records after a storage write", g_stat_pass, kept);
+    g_ixc_n = kept;
+    g_ixc_epoch = g_wr_epoch;
+}
 static void ixc_take(const p_draw *dw, const p_draw_idx *di) {
     if (g_ixc_n < IXC_MAX && !ixc_find(dw, di)) g_ixc[g_ixc_n++] = (ixc_ent){dw ? dw->ind : di->ind, dw ? 0 : di->ibuf, dw ? dw->prim : di->prim, dw ? -1 : di->itype, 0, 0, 0};
 }

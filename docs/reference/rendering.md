@@ -1447,6 +1447,7 @@ Digimon Story Cyber Sleuth: Complete Edition (Media.Vision's MVGL engine, SDK 6.
 - **Symptom:** `nvnCommandBufferDrawMeshTasksIndirect` was unimplemented and its GPU-driven draws were skipped.
 - **Cause:** the indirect buffer carries a count and a first-task index. A CPU read at recording time cannot see the GPU producer, and Metal expects three grid dimensions, without the first-task word.
 - **Fix:** the indirect conversion compute pass produces the Metal grid and a separate first-workgroup value for the task and mesh shaders. Convert after ending a pass that can land earlier writes; tag the conversion with that write epoch. `t_mesh_indirect` writes both a nonzero and a zero-work record on the GPU before replay converts them.
+- A mesh draw's storage writes used to invalidate every converted record. Replay now retains the mesh records whose eight source bytes are disjoint from all the draw's known storage writes. Unknown writes and sparse ranges keep the conservative fallback. `t_mesh_indirect` covers overlap with the second word of a record, an unrelated record and a write with unknown size.
 - **Found on:** The Legend of Zelda: Ocarina of Time 1.1.1.
 
 ### Atomic reinterpretation of RGBA8
