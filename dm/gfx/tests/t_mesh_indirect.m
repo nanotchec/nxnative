@@ -39,6 +39,24 @@ int main(void) { @autoreleasepool {
     assert(!memcmp((const uint8_t *)converted.contents + ao, expected_3, sizeof expected_3));
     assert(!memcmp((const uint8_t *)converted.contents + bo, expected_0, sizeof expected_0));
     assert(!memcmp((const uint8_t *)converted.contents + qo, expected_3, sizeof expected_3));
+
+    // A known storage write overlaps only the last word of the first mesh record.
+    NvProg *mesh = [NvProg new];
+    mesh->sh[4] = [NvShader new];
+    mesh->sh[4]->rf.nb = 1;
+    mesh->sh[4]->rf.b[0] = (nvn_rbind){.kind = NVN_RB_SBUFP, .rw = 1};
+    S.ssbo[4][0] = (p_bind_buf){.addr = (uintptr_t)(guest + 1), .size = 4};
+    g_ixc_epoch = g_wr_epoch;
+    g_ixc_sub = g_sub_serial;
+    g_ixc_n = 0;
+    ixc_take(&draw_3, NULL);
+    ixc_take(&draw_0, NULL);
+    ixc_mesh_written(mesh);
+    assert(!ixc_find(&draw_3, NULL) && ixc_find(&draw_0, NULL));
+    S.ssbo[4][0].size = 0;
+    ixc_mesh_written(mesh);
+    assert(!ixc_find(&draw_0, NULL));
+
     res_remove(seed); mtl_pool_del(guest); mtl_drain(); munmap(guest, bytes);
-    puts("GPU-written mesh arguments: grid, first task and zero-work dispatch PASS");
+    puts("GPU-written mesh arguments: grid, first task, zero-work and write invalidation PASS");
 } return 0; }
